@@ -1,0 +1,24 @@
+{
+  "name": "flat-ranges",
+  "version": "1.0.0",
+  "description": "Utilities for managing flat range lists like [from1, to1, from2, to2, ...]",
+  "keywords": [
+    "range",
+    "ranges",
+    "interval",
+    "flat",
+    "list",
+    "merge",
+    "subtract",
+    "utils",
+    "sync",
+    "data"
+  ],
+  "license": "MIT",
+  "author": "",
+  "type": "commonjs",
+  "main": "index.js",
+  "scripts": {
+    "test": "node test/test.js"
+  }
+}
