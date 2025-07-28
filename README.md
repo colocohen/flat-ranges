@@ -26,19 +26,19 @@ npm install flat-ranges
 ## 🔧 Usage
 
 ```js
-var ranges = require('flat-ranges');
+var flat_ranges = require('flat-ranges');
 
 var r = [];
-ranges.ranges_add(r, [0, 5]);
-ranges.ranges_add(r, [10, 15]);
+flat_ranges.add(r, [0, 5]);
+flat_ranges.add(r, [10, 15]);
 console.log(r); // [0,5,10,15]
 
-ranges.ranges_remove(r, [3,12]);
+flat_ranges.remove(r, [3,12]);
 console.log(r); // [0,3,12,15]
 
-console.log("Total length:", ranges.ranges_length(r)); // 6
+console.log("Total length:", flat_ranges.length(r)); // 6
 
-var inverted = ranges.ranges_invert(r, 0, 20);
+var inverted = flat_ranges.invert(r, 0, 20);
 console.log("Inverted:", inverted); // [3,12,15,20]
 ```
 
@@ -48,17 +48,17 @@ console.log("Inverted:", inverted); // [3,12,15,20]
 
 | Function | Description |
 |----------|-------------|
-| `ranges_add(ranges, newRanges)` | Adds new ranges and merges overlaps |
-| `ranges_remove(ranges, removeRanges)` | Removes specified ranges |
-| `ranges_merge(flatRanges)` | Merges overlapping or adjacent ranges |
-| `ranges_invert(ranges, fullStart, fullEnd)` | Returns the inverse of given ranges in the given domain |
-| `ranges_length(ranges)` | Returns the total covered length |
-| `ranges_subtract_clip(baseRanges, subtractRanges)` | Cuts out parts that intersect `baseRanges` from `subtractRanges` |
-| `ranges_set_have(have, notHave, newHave)` | Updates known data ranges using a new "have" state |
-| `ranges_add_have(have, notHave, newHave)` | Adds new "have" ranges, skipping contradictions |
-| `ranges_set_not_have(have, notHave, newNotHave)` | Updates known "not have" ranges based on fresh info |
-| `ranges_add_not_have(have, notHave, newNotHave)` | Adds new "not have" ranges, skipping contradictions |
-| `ranges_unknow(have, notHave, min, max)` | Returns the unknown ranges in the specified range |
+| `add(ranges, newRanges)` | Adds new ranges and merges overlaps |
+| `remove(ranges, removeRanges)` | Removes specified ranges |
+| `merge(flatRanges)` | Merges overlapping or adjacent ranges |
+| `invert(ranges, fullStart, fullEnd)` | Returns the inverse of given ranges in the given domain |
+| `length(ranges)` | Returns the total covered length |
+| `subtract_clip(baseRanges, subtractRanges)` | Cuts out parts that intersect `baseRanges` from `subtractRanges` |
+| `set_have(have, notHave, newHave)` | Updates known data ranges using a new "have" state |
+| `add_have(have, notHave, newHave)` | Adds new "have" ranges, skipping contradictions |
+| `set_not_have(have, notHave, newNotHave)` | Updates known "not have" ranges based on fresh info |
+| `add_not_have(have, notHave, newNotHave)` | Adds new "not have" ranges, skipping contradictions |
+| `unknow(have, notHave, min, max)` | Returns the unknown ranges in the specified range |
 
 ---
 

@@ -1,12 +1,10 @@
-
-
-function ranges_subtract_clip(baseRanges, subtractRanges) {
+function subtract_clip(baseRanges, subtractRanges) {
     var result = [];
     for (var i = 0; i < subtractRanges.length; i += 2) {
         var from = subtractRanges[i];
         var to = subtractRanges[i + 1];
         var clipped = [from, to];
-        ranges_remove(clipped, baseRanges);
+        remove(clipped, baseRanges);
         for (var j = 0; j < clipped.length; j += 2) {
         result.push(clipped[j], clipped[j + 1]);
         }
@@ -14,7 +12,7 @@ function ranges_subtract_clip(baseRanges, subtractRanges) {
     return result;
 }
 
-function ranges_merge(flatRanges) {
+function merge(flatRanges) {
     var result = [];
     for (var i = 0; i < flatRanges.length; i += 2) {
         var from = flatRanges[i];
@@ -33,7 +31,7 @@ function ranges_merge(flatRanges) {
     return result;
 }
 
-function ranges_set_have(knownHave, knownNotHave, newHave) {
+function set_have(knownHave, knownNotHave, newHave) {
     var changed = false;
 
     var becameNotHave = [];
@@ -41,19 +39,19 @@ function ranges_set_have(knownHave, knownNotHave, newHave) {
         var from = knownHave[i];
         var to = knownHave[i + 1];
         var piece = [from, to];
-        ranges_remove(piece, newHave);
+        remove(piece, newHave);
         for (var j = 0; j < piece.length; j += 2) {
         becameNotHave.push(piece[j], piece[j + 1]);
         }
     }
 
     if (becameNotHave.length > 0) {
-        if (ranges_add(knownNotHave, becameNotHave)) {
+        if (add(knownNotHave, becameNotHave)) {
         changed = true;
         }
     }
 
-    var clean = ranges_subtract_clip(knownNotHave, newHave);
+    var clean = subtract_clip(knownNotHave, newHave);
 
     // נבדוק אם knownHave השתנה
     if (knownHave.length > 0) {
@@ -61,26 +59,26 @@ function ranges_set_have(knownHave, knownNotHave, newHave) {
         changed = true;
     }
 
-    if (ranges_add(knownHave, clean)) {
+    if (add(knownHave, clean)) {
         changed = true;
     }
 
     return changed;
 }
 
-function ranges_add_have(knownHave, knownNotHave, newHave) {
+function add_have(knownHave, knownNotHave, newHave) {
     // לא יכולים להיות גם ב־have וגם ב־not_have
-    var clean = ranges_subtract_clip(knownNotHave, newHave);
-    return ranges_add(knownHave, clean);
+    var clean = subtract_clip(knownNotHave, newHave);
+    return add(knownHave, clean);
 }
 
-function ranges_add_not_have(knownHave, knownNotHave, newNotHave) {
+function add_not_have(knownHave, knownNotHave, newNotHave) {
     // לא מוסיפים מידע שסותר את מה שכבר ידוע כקיים
-    var clean = ranges_subtract_clip(knownHave, newNotHave);
-    return ranges_add(knownNotHave, clean);
+    var clean = subtract_clip(knownHave, newNotHave);
+    return add(knownNotHave, clean);
 }
 
-function ranges_set_not_have(knownHave, knownNotHave, newNotHave) {
+function set_not_have(knownHave, knownNotHave, newNotHave) {
     var changed = false;
 
     var becameHave = [];
@@ -88,7 +86,7 @@ function ranges_set_not_have(knownHave, knownNotHave, newNotHave) {
         var from = knownNotHave[i];
         var to   = knownNotHave[i + 1];
         var piece = [from, to];
-        ranges_remove(piece, newNotHave);
+        remove(piece, newNotHave);
         for (var j = 0; j < piece.length; j += 2) {
         becameHave.push(piece[j], piece[j + 1]);
         }
@@ -96,17 +94,17 @@ function ranges_set_not_have(knownHave, knownNotHave, newNotHave) {
 
 
     if (becameHave.length > 0) {
-        if (ranges_add(knownHave, becameHave)) {
+        if (add(knownHave, becameHave)) {
         changed = true;
         }
     }
 
-    var clean = ranges_subtract_clip(knownHave, newNotHave);
+    var clean = subtract_clip(knownHave, newNotHave);
     if (knownNotHave.length > 0) {
         knownNotHave.length = 0;
         changed = true;
     }
-    if (ranges_add(knownNotHave, clean)) {
+    if (add(knownNotHave, clean)) {
         changed = true;
     }
 
@@ -114,7 +112,7 @@ function ranges_set_not_have(knownHave, knownNotHave, newNotHave) {
 }
 
 
-function ranges_invert(ranges, fullStart, fullEnd) {
+function invert(ranges, fullStart, fullEnd) {
     var result = [];
     var last = fullStart;
 
@@ -128,7 +126,7 @@ function ranges_invert(ranges, fullStart, fullEnd) {
     return result;
 }
 
-function ranges_remove(ranges, removeRanges) {
+function remove(ranges, removeRanges) {
     var result = [];
     var i = 0, j = 0;
     var changed = false;
@@ -173,7 +171,7 @@ function ranges_remove(ranges, removeRanges) {
 }
 
 
-function ranges_add(ranges, newRanges) {
+function add(ranges, newRanges) {
     var changed = false;
     var all = [];
 
@@ -236,7 +234,7 @@ function ranges_add(ranges, newRanges) {
 }
 
 
-function ranges_length(ranges) {
+function length(ranges) {
     var total = 0;
     for (var i = 0; i < ranges.length; i += 2) {
         total += ranges[i + 1] - ranges[i];
@@ -244,24 +242,24 @@ function ranges_length(ranges) {
     return total;
 }
 
-function ranges_unknow(have_ranges, not_have_ranges, min_length, max_length) {
+function unknow(have_ranges, not_have_ranges, min_length, max_length) {
     
-    return ranges_invert(ranges_merge(have_ranges.concat(not_have_ranges)), min_length, max_length);
+    return invert(merge(have_ranges.concat(not_have_ranges)), min_length, max_length);
 
 }
 
 
 
 module.exports = {
-  ranges_subtract_clip,
-  ranges_merge,
-  ranges_set_have,
-  ranges_add_have,
-  ranges_add_not_have,
-  ranges_set_not_have,
-  ranges_invert,
-  ranges_remove,
-  ranges_add,
-  ranges_length,
-  ranges_unknow
+  subtract_clip,
+  merge,
+  set_have,
+  add_have,
+  add_not_have,
+  set_not_have,
+  invert,
+  remove,
+  add,
+  length,
+  unknow
 };

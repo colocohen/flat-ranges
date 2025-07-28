@@ -1,6 +1,6 @@
 {
   "name": "flat-ranges",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Utilities for managing flat range lists like [from1, to1, from2, to2, ...]",
   "keywords": [
     "range",
@@ -12,10 +12,20 @@
     "subtract",
     "utils",
     "sync",
-    "data"
+    "data",
+    "javascript",
+    "ack"
   ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/colocohen/flat-ranges.git"
+  },
+  "homepage": "https://github.com/colocohen/flat-ranges#readme",
+  "bugs": {
+    "url": "https://github.com/colocohen/flat-ranges/issues"
+  },
   "license": "MIT",
-  "author": "",
+  "author": "colocohen",
   "type": "commonjs",
   "main": "index.js",
   "scripts": {
