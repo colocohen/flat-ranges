@@ -127,48 +127,57 @@ function invert(ranges, fullStart, fullEnd) {
 }
 
 function remove(ranges, removeRanges) {
-    var result = [];
-    var i = 0, j = 0;
-    var changed = false;
+  var result = [];
+  var i = 0, j = 0;
+  var changed = false;
 
-    while (i < ranges.length && j < removeRanges.length) {
-        var aFrom = ranges[i], aTo = ranges[i + 1];
-        var bFrom = removeRanges[j], bTo = removeRanges[j + 1];
+  while (i < ranges.length && j < removeRanges.length) {
+    var aFrom = ranges[i], aTo = ranges[i + 1];
+    var bFrom = removeRanges[j], bTo = removeRanges[j + 1];
 
-        if (aTo <= bFrom) {
-        // אין חפיפה
-        result.push(aFrom, aTo);
-        i += 2;
-        } else if (aFrom >= bTo) {
-        // הטווח להסרה עוד לא רלוונטי
-        j += 2;
-        } else {
-        // יש חפיפה
-        if (aFrom < bFrom) {
-            result.push(aFrom, bFrom);
-        }
-        if (aTo > bTo) {
-            result.push(bTo, aTo);
-        }
-        changed = true;
-        i += 2;
-        }
+    // הפיכת טווחים ריקים לטווחים בודדים
+    if (aFrom === aTo) aTo = aFrom + 1;
+    if (bFrom === bTo) bTo = bFrom + 1;
+
+    if (aTo <= bFrom) {
+      // אין חפיפה
+      result.push(aFrom, aTo);
+      i += 2;
+    } else if (aFrom >= bTo) {
+      // הטווח להסרה עוד לא רלוונטי
+      j += 2;
+    } else {
+      // יש חפיפה
+      if (aFrom < bFrom) {
+        result.push(aFrom, bFrom);
+      }
+      if (aTo > bTo) {
+        result.push(bTo, aTo);
+      }
+      changed = true;
+      i += 2;
     }
+  }
 
-    // הוספת טווחים שנשארו
-    while (i < ranges.length) {
-        result.push(ranges[i++], ranges[i++]);
-    }
+  // הוספת טווחים שנשארו
+  while (i < ranges.length) {
+    var aFrom = ranges[i], aTo = ranges[i + 1];
+    if (aFrom === aTo) aTo = aFrom + 1; // גם פה
+    result.push(aFrom, aTo);
+    i += 2;
+  }
 
-    if (result.length !== ranges.length) changed = true;
-    for (var k = 0; k < result.length; k++) {
-        if (ranges[k] !== result[k]) changed = true;
-        ranges[k] = result[k];
-    }
-    ranges.length = result.length;
+  if (result.length !== ranges.length) changed = true;
+  for (var k = 0; k < result.length; k++) {
+    if (ranges[k] !== result[k]) changed = true;
+    ranges[k] = result[k];
+  }
+  ranges.length = result.length;
 
-    return changed;
+  return changed;
 }
+
+
 
 
 function add(ranges, newRanges) {

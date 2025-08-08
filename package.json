@@ -1,6 +1,6 @@
 {
   "name": "flat-ranges",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Utilities for managing flat range lists like [from1, to1, from2, to2, ...]",
   "keywords": [
     "range",
