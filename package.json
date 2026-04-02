@@ -1,20 +1,26 @@
 {
   "name": "flat-ranges",
-  "version": "1.0.2",
-  "description": "Utilities for managing flat range lists like [from1, to1, from2, to2, ...]",
+  "version": "2.0.0",
+  "description": "Track what you have, what's missing, and what's unknown — fast range management for sync, streaming, and downloads",
   "keywords": [
     "range",
     "ranges",
     "interval",
-    "flat",
-    "list",
     "merge",
     "subtract",
-    "utils",
+    "invert",
+    "byte-range",
+    "segments",
+    "chunks",
     "sync",
-    "data",
-    "javascript",
-    "ack"
+    "p2p",
+    "replication",
+    "streaming",
+    "buffer",
+    "download",
+    "availability",
+    "scheduling",
+    "bitfield"
   ],
   "repository": {
     "type": "git",
@@ -26,9 +32,36 @@
   },
   "license": "MIT",
   "author": "colocohen",
-  "type": "commonjs",
-  "main": "index.js",
+  "files": [
+    "index.js",
+    "index.mjs",
+    "README.md"
+  ],
+  "main": "./index.js",
+  "module": "./index.mjs",
+  "exports": {
+    ".": {
+      "import": "./index.mjs",
+      "require": "./index.js",
+      "default": "./index.js"
+    }
+  },
+  "browser": "./index.js",
+  "sideEffects": false,
+  "engines": {
+    "node": ">=10"
+  },
   "scripts": {
-    "test": "node test/test.js"
-  }
+    "test": "node test.js"
+  },
+  "funding": [
+    {
+      "type": "github",
+      "url": "https://github.com/sponsors/colocohen"
+    },
+    {
+      "type": "opencollective",
+      "url": "https://opencollective.com/colocohen"
+    }
+  ]
 }
