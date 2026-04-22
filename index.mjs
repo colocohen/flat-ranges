@@ -8,6 +8,7 @@ export const merge = flatRanges.merge;
 export const invert = flatRanges.invert;
 export const subtract_clip = flatRanges.subtract_clip;
 export const length = flatRanges.length;
+export const contains = flatRanges.contains;
 export const unknown = flatRanges.unknown;
 export const add_have = flatRanges.add_have;
 export const add_not_have = flatRanges.add_not_have;

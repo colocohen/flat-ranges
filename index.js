@@ -1,9 +1,19 @@
 /**
- * flat-ranges v1.2.0
+ * flat-ranges v2.1.0
  * Lightweight utility for managing flat range lists: [from1, to1, from2, to2, ...]
  *
  * All ranges are half-open intervals [from, to) where from < to.
  * Empty ranges (from === to) are silently skipped.
+ *
+ * Merge semantics (v2.1.0 and later):
+ *   Two ranges merge only when they overlap OR touch exactly (to === from).
+ *   This matches standard half-open interval semantics: [0, 5) and [5, 10)
+ *   merge because they touch at 5; but [0, 5) and [6, 10) stay separate
+ *   because position 5 isn't in either range.
+ *
+ *   (Prior to v2.1.0, addOne and mergeTwoSorted used `to >= from - 1` which
+ *    silently merged ranges with a one-unit gap — inconsistent with merge()
+ *    and incorrect for discrete integer ranges like IDs or UIDs.)
  *
  * UMD — works with CommonJS (require), AMD (define), ES modules (import), and browser globals.
  */
@@ -24,6 +34,9 @@
   //  Uses binary search to find the merge zone — O(log n + k)
   //  where k is the number of ranges absorbed by the merge.
   //  Zero allocations on the hot path.
+  //
+  //  Merge rule: ranges merge when they overlap or touch exactly
+  //  (existing.to === new.from, or new.to === existing.from).
   // ────────────────────────────────────────────────────
   function addOne(ranges, from, to) {
     if (from >= to) return false;
@@ -34,20 +47,22 @@
       return true;
     }
 
-    // Binary search: first pair whose `to` >= from - 1 (could merge at start)
+    // Binary search: first pair whose `to` >= from (could merge at start).
+    // Anything with to < from is strictly before and can't merge.
     var lo = 0, hi = (n >> 1);
     while (lo < hi) {
       var mid = (lo + hi) >> 1;
-      if (ranges[(mid << 1) + 1] < from - 1) lo = mid + 1;
+      if (ranges[(mid << 1) + 1] < from) lo = mid + 1;
       else hi = mid;
     }
     var mergeStart = lo;
 
-    // Binary search: first pair whose `from` > to + 1 (past merge zone)
+    // Binary search: first pair whose `from` > to (past merge zone).
+    // Anything with from <= to still overlaps or touches.
     lo = mergeStart; hi = (n >> 1);
     while (lo < hi) {
       var mid = (lo + hi) >> 1;
-      if (ranges[mid << 1] <= to + 1) lo = mid + 1;
+      if (ranges[mid << 1] <= to) lo = mid + 1;
       else hi = mid;
     }
     var mergeEnd = lo;
@@ -121,6 +136,8 @@
   // ────────────────────────────────────────────────────
   //  Internal: two-pointer merge of two SORTED flat range
   //  arrays into a single merged array. O(n + m).
+  //
+  //  Merge rule: ranges merge when they overlap or touch exactly.
   // ────────────────────────────────────────────────────
   function mergeTwoSorted(a, b) {
     var result = [];
@@ -137,7 +154,7 @@
       }
       if (from >= to) continue;
 
-      if (result.length > 0 && from <= result[result.length - 1] + 1) {
+      if (result.length > 0 && from <= result[result.length - 1]) {
         if (to > result[result.length - 1]) {
           result[result.length - 1] = to;
         }
@@ -346,6 +363,31 @@
   }
 
   // ────────────────────────────────────────────────────
+  //  contains(ranges, value)
+  //  Test whether `value` falls inside any range. O(log n)
+  //  via binary search, zero allocations.
+  //
+  //    contains([0, 10, 20, 30], 5)  → true
+  //    contains([0, 10, 20, 30], 10) → false  (half-open)
+  //    contains([0, 10, 20, 30], 25) → true
+  //    contains([], 5)               → false
+  // ────────────────────────────────────────────────────
+  function contains(ranges, value) {
+    var pairs = ranges.length >> 1;
+    if (pairs === 0) return false;
+
+    // Find the largest pair index whose `from` is ≤ value
+    var lo = 0, hi = pairs - 1;
+    while (lo < hi) {
+      var mid = (lo + hi + 1) >> 1;
+      if (ranges[mid << 1] <= value) lo = mid;
+      else hi = mid - 1;
+    }
+    var idx = lo << 1;
+    return ranges[idx] <= value && value < ranges[idx + 1];
+  }
+
+  // ────────────────────────────────────────────────────
   //  unknown(have, notHave, min, max)
   // ────────────────────────────────────────────────────
   function unknown(have_ranges, not_have_ranges, min, max) {
@@ -461,6 +503,7 @@
     invert: invert,
     subtract_clip: subtract_clip,
     length: length,
+    contains: contains,
     unknown: unknown,
     add_have: add_have,
     add_not_have: add_not_have,
