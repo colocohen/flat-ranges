@@ -2,6 +2,7 @@
   "name": "flat-ranges",
   "version": "2.1.0",
   "description": "Track what you have, what's missing, and what's unknown - fast range management for sync, streaming, and downloads",
+  "type": "commonjs",
   "keywords": [
     "range",
     "ranges",
