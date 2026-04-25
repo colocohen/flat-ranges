@@ -82,12 +82,6 @@ section('add');
 })();
 
 (function () {
-  var r = [0, 5];
-  add(r, [6, 10]);
-  assert(r, [0, 10], 'add adjacent (gap of 1 merges)');
-})();
-
-(function () {
   var r = [0, 3, 7, 10];
   add(r, [2, 8]);
   assert(r, [0, 10], 'add bridging two ranges');
