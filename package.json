@@ -1,6 +1,6 @@
 {
   "name": "flat-ranges",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "Track what you have, what's missing, and what's unknown - fast range management for sync, streaming, and downloads",
   "type": "commonjs",
   "keywords": [
@@ -10,6 +10,7 @@
     "merge",
     "subtract",
     "invert",
+    "intersect",
     "byte-range",
     "segments",
     "chunks",
@@ -21,7 +22,8 @@
     "download",
     "availability",
     "scheduling",
-    "bitfield"
+    "bitfield",
+    "typescript"
   ],
   "repository": {
     "type": "git",
@@ -36,12 +38,15 @@
   "files": [
     "index.js",
     "index.mjs",
+    "index.d.ts",
     "README.md"
   ],
   "main": "./index.js",
   "module": "./index.mjs",
+  "types": "./index.d.ts",
   "exports": {
     ".": {
+      "types": "./index.d.ts",
       "import": "./index.mjs",
       "require": "./index.js",
       "default": "./index.js"

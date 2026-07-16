@@ -1,698 +1,354 @@
-var flatRanges = require('./index.js');
+/**
+ * flat-ranges test suite
+ *
+ * Two layers:
+ *   1. Unit tests — explicit expectations for every public function,
+ *      including edge cases (empty arrays, empty ranges, touching
+ *      half-open boundaries).
+ *   2. Property-based fuzz — thousands of random cases verified
+ *      against a naive reference implementation built on boolean
+ *      coverage over a small integer domain. If the fast code and
+ *      the obviously-correct code ever disagree, the test fails and
+ *      prints the exact reproducing input.
+ *
+ * Run: node test.js
+ */
+'use strict';
 
-var add = flatRanges.add;
-var remove = flatRanges.remove;
-var merge = flatRanges.merge;
-var invert = flatRanges.invert;
-var subtract_clip = flatRanges.subtract_clip;
-var length = flatRanges.length;
-var unknown = flatRanges.unknown;
-var add_have = flatRanges.add_have;
-var add_not_have = flatRanges.add_not_have;
-var set_have = flatRanges.set_have;
-var set_not_have = flatRanges.set_not_have;
+var fr = require('./index.js');
 
-var passed = 0;
-var failed = 0;
-var totalAssertions = 0;
+var passed = 0, failed = 0;
 
-function deepEqual(a, b) {
-  if (a.length !== b.length) return false;
-  for (var i = 0; i < a.length; i++) {
-    if (a[i] !== b[i]) return false;
-  }
-  return true;
-}
+function eq(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
 
-function assert(actual, expected, label) {
-  totalAssertions++;
-  if (deepEqual(actual, expected)) {
-    passed++;
-  } else {
+function check(name, actual, expected) {
+  if (eq(actual, expected)) { passed++; }
+  else {
     failed++;
-    console.log('  \u2717 ' + label);
-    console.log('    expected:', JSON.stringify(expected));
-    console.log('    actual:  ', JSON.stringify(actual));
+    console.error('FAIL: ' + name);
+    console.error('  expected: ' + JSON.stringify(expected));
+    console.error('  actual:   ' + JSON.stringify(actual));
   }
 }
 
-function assertVal(actual, expected, label) {
-  totalAssertions++;
-  if (actual === expected) {
-    passed++;
-  } else {
-    failed++;
-    console.log('  \u2717 ' + label);
-    console.log('    expected:', expected);
-    console.log('    actual:  ', actual);
-  }
-}
+// ════════════════════════════════════════════════════════
+//  1. Unit tests
+// ════════════════════════════════════════════════════════
 
-function section(name) {
-  console.log('\n\u2501\u2501\u2501 ' + name + ' \u2501\u2501\u2501');
-}
-
-// ═══════════════════════════════════════════════════════════
-//  add
-// ═══════════════════════════════════════════════════════════
-section('add');
-
+// ---- add ----
 (function () {
   var r = [];
-  add(r, [5, 10]);
-  assert(r, [5, 10], 'add to empty');
+  check('add into empty returns true', fr.add(r, [0, 10]), true);
+  check('add into empty', r, [0, 10]);
+
+  r = [0, 5, 20, 25];
+  fr.add(r, [4, 21]);
+  check('add bridging merge', r, [0, 25]);
+
+  r = [0, 5];
+  check('add touching (half-open) merges', fr.add(r, [5, 10]), true);
+  check('add touching result', r, [0, 10]);
+
+  r = [0, 5];
+  fr.add(r, [6, 10]);
+  check('add with 1-unit gap stays separate', r, [0, 5, 6, 10]);
+
+  r = [0, 100];
+  check('add fully-contained returns false', fr.add(r, [10, 20]), false);
+  check('add fully-contained unchanged', r, [0, 100]);
+
+  r = [10, 20];
+  fr.add(r, [0, 5]);
+  check('add before first', r, [0, 5, 10, 20]);
+
+  r = [10, 20];
+  fr.add(r, [30, 40]);
+  check('add after last (append fast path)', r, [10, 20, 30, 40]);
+
+  r = [10, 20];
+  fr.add(r, [20, 30]);
+  check('extend last range (fast path)', r, [10, 30]);
+
+  r = [10, 20];
+  check('add empty range is no-op', fr.add(r, [5, 5]), false);
+
+  r = [];
+  fr.add(r, [30, 40, 0, 10, 20, 25]);   // unsorted batch
+  check('add unsorted batch', r, [0, 10, 20, 25, 30, 40]);
+
+  // large batch path (> threshold)
+  r = [];
+  var batch = [];
+  for (var i = 9; i >= 0; i--) batch.push(i * 10, i * 10 + 5);
+  fr.add(r, batch);
+  check('add large reverse-sorted batch', r,
+    [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95]);
 })();
 
-(function () {
-  var r = [0, 5];
-  add(r, [10, 15]);
-  assert(r, [0, 5, 10, 15], 'add non-overlapping');
-})();
-
-(function () {
-  var r = [0, 5];
-  add(r, [3, 8]);
-  assert(r, [0, 8], 'add overlapping');
-})();
-
-(function () {
-  var r = [0, 5];
-  add(r, [5, 10]);
-  assert(r, [0, 10], 'add adjacent (touching)');
-})();
-
-(function () {
-  var r = [0, 3, 7, 10];
-  add(r, [2, 8]);
-  assert(r, [0, 10], 'add bridging two ranges');
-})();
-
-(function () {
-  var r = [0, 5];
-  add(r, [1, 3]);
-  assert(r, [0, 5], 'add subset — no change');
-})();
-
-(function () {
-  var r = [0, 5];
-  var changed = add(r, [1, 3]);
-  assertVal(changed, false, 'add subset returns false');
-})();
-
-(function () {
-  var r = [0, 5];
-  var changed = add(r, [10, 15]);
-  assertVal(changed, true, 'add new range returns true');
-})();
-
-(function () {
-  var r = [];
-  add(r, [10, 15, 0, 5]);
-  assert(r, [0, 5, 10, 15], 'add unsorted input — gets sorted');
-})();
-
-(function () {
-  var r = [0, 5];
-  add(r, []);
-  assert(r, [0, 5], 'add empty newRanges — no change');
-})();
-
-(function () {
-  var r = [];
-  add(r, [3, 3]);
-  assert(r, [], 'add empty range (from === to) — skipped');
-})();
-
-(function () {
-  // addOne fast path: insert at beginning
-  var r = [10, 20, 30, 40];
-  add(r, [0, 5]);
-  assert(r, [0, 5, 10, 20, 30, 40], 'addOne: insert at beginning');
-})();
-
-(function () {
-  // addOne fast path: insert in middle gap
-  var r = [0, 5, 20, 30];
-  add(r, [10, 15]);
-  assert(r, [0, 5, 10, 15, 20, 30], 'addOne: insert in middle gap');
-})();
-
-(function () {
-  // addOne fast path: insert at end
-  var r = [0, 5, 10, 15];
-  add(r, [50, 60]);
-  assert(r, [0, 5, 10, 15, 50, 60], 'addOne: insert at end');
-})();
-
-(function () {
-  // addOne fast path: merge spanning all ranges
-  var r = [0, 3, 5, 8, 10, 13];
-  add(r, [-1, 20]);
-  assert(r, [-1, 20], 'addOne: merge spanning all');
-})();
-
-(function () {
-  // Large batch: triggers sort+merge path (> 12 elements)
-  var r = [100, 200];
-  var big = [];
-  for (var i = 0; i < 20; i++) {
-    big.push(i * 10, i * 10 + 5);
-  }
-  add(r, big);
-  // Should merge 0-5,10-15,...,190-195 with 100-200
-  var expected = [];
-  add(expected, big);
-  add(expected, [100, 200]);
-  assert(r, expected.slice(), 'add large batch — sort+merge path');
-})();
-
-// ═══════════════════════════════════════════════════════════
-//  remove
-// ═══════════════════════════════════════════════════════════
-section('remove');
-
-(function () {
-  var r = [0, 10];
-  remove(r, [3, 7]);
-  assert(r, [0, 3, 7, 10], 'remove middle — splits range');
-})();
-
-(function () {
-  var r = [0, 10];
-  remove(r, [2, 4, 6, 8]);
-  assert(r, [0, 2, 4, 6, 8, 10], 'remove multiple from one range');
-})();
-
-(function () {
-  var r = [0, 10];
-  remove(r, [0, 5]);
-  assert(r, [5, 10], 'remove left part');
-})();
-
-(function () {
-  var r = [0, 10];
-  remove(r, [5, 10]);
-  assert(r, [0, 5], 'remove right part');
-})();
-
-(function () {
-  var r = [0, 10];
-  remove(r, [0, 10]);
-  assert(r, [], 'remove entire range');
-})();
-
-(function () {
-  var r = [0, 10];
-  remove(r, [-5, 15]);
-  assert(r, [], 'remove superset');
-})();
-
-(function () {
-  var r = [0, 5, 10, 15];
-  remove(r, [3, 12]);
-  assert(r, [0, 3, 12, 15], 'remove spanning two ranges');
-})();
-
-(function () {
-  var r = [0, 10];
-  remove(r, [20, 30]);
-  assert(r, [0, 10], 'remove non-overlapping — no change');
-})();
-
-(function () {
-  var r = [0, 10];
-  var changed = remove(r, [20, 30]);
-  assertVal(changed, false, 'remove non-overlapping returns false');
-})();
-
-(function () {
-  var r = [0, 10];
-  var changed = remove(r, [3, 7]);
-  assertVal(changed, true, 'remove overlap returns true');
-})();
-
-(function () {
-  var r = [0, 3, 5, 8, 10, 13, 15, 18];
-  remove(r, [1, 2, 6, 7, 11, 12, 16, 17]);
-  assert(r, [0, 1, 2, 3, 5, 6, 7, 8, 10, 11, 12, 13, 15, 16, 17, 18],
-    'remove many small cuts from many ranges');
-})();
-
+// ---- remove ----
 (function () {
   var r = [0, 100];
-  remove(r, [10, 20, 30, 40, 50, 60, 70, 80]);
-  assert(r, [0, 10, 20, 30, 40, 50, 60, 70, 80, 100],
-    'remove swiss-cheese pattern');
+  fr.remove(r, [10, 20, 50, 60]);
+  check('remove punches holes', r, [0, 10, 20, 50, 60, 100]);
+
+  r = [0, 10, 20, 30];
+  check('remove miss (outside span) returns false', fr.remove(r, [100, 110]), false);
+  check('remove miss unchanged', r, [0, 10, 20, 30]);
+
+  r = [0, 10, 20, 30];
+  check('remove in interior gap returns false', fr.remove(r, [12, 18]), false);
+  check('remove in gap unchanged', r, [0, 10, 20, 30]);
+
+  r = [0, 10];
+  fr.remove(r, [0, 10]);
+  check('remove everything', r, []);
+
+  r = [0, 10];
+  fr.remove(r, [0, 5]);
+  check('remove left edge', r, [5, 10]);
+
+  r = [0, 10];
+  fr.remove(r, [5, 10]);
+  check('remove right edge', r, [0, 5]);
+
+  r = [];
+  check('remove from empty returns false', fr.remove(r, [0, 10]), false);
 })();
 
+// ---- merge / invert ----
 (function () {
-  var r = [];
-  remove(r, [0, 5]);
-  assert(r, [], 'remove from empty — no change');
+  check('merge overlapping', fr.merge([0, 5, 3, 8]), [0, 8]);
+  check('merge touching', fr.merge([0, 5, 5, 8]), [0, 8]);
+  check('merge separate', fr.merge([0, 5, 6, 8]), [0, 5, 6, 8]);
+  check('merge skips empty', fr.merge([0, 5, 7, 7, 9, 12]), [0, 5, 9, 12]);
+
+  check('invert basic', fr.invert([10, 20, 30, 40], 0, 50), [0, 10, 20, 30, 40, 50]);
+  check('invert of empty', fr.invert([], 0, 50), [0, 50]);
+  check('invert full coverage', fr.invert([0, 50], 0, 50), []);
 })();
 
+// ---- intersect ----
 (function () {
-  var r = [0, 10];
-  remove(r, []);
-  assert(r, [0, 10], 'remove empty removeRanges — no change');
+  check('intersect basic', fr.intersect([0, 10, 20, 30], [5, 25]), [5, 10, 20, 25]);
+  check('intersect touching is empty (half-open)', fr.intersect([0, 10], [10, 20]), []);
+  check('intersect identical', fr.intersect([0, 10], [0, 10]), [0, 10]);
+  check('intersect with empty', fr.intersect([0, 10], []), []);
+  check('intersect disjoint', fr.intersect([0, 5], [10, 15]), []);
+  check('intersect nested', fr.intersect([0, 100], [10, 20, 30, 40]), [10, 20, 30, 40]);
 })();
 
-// ═══════════════════════════════════════════════════════════
-//  merge
-// ═══════════════════════════════════════════════════════════
-section('merge');
-
+// ---- subtract_clip / length ----
 (function () {
-  assert(merge([0, 5, 3, 8]), [0, 8], 'merge overlapping');
+  check('subtract_clip', fr.subtract_clip([20, 40], [0, 50]), [0, 20, 40, 50]);
+  check('subtract_clip empty base', fr.subtract_clip([], [0, 50]), [0, 50]);
+  check('length', fr.length([0, 10, 20, 30]), 20);
+  check('length of empty', fr.length([]), 0);
 })();
 
+// ---- contains / overlaps / equal ----
 (function () {
-  assert(merge([0, 5, 5, 10]), [0, 10], 'merge touching');
+  check('contains inside', fr.contains([0, 10, 20, 30], 5), true);
+  check('contains at to (half-open)', fr.contains([0, 10, 20, 30], 10), false);
+  check('contains at from', fr.contains([0, 10, 20, 30], 20), true);
+  check('contains empty', fr.contains([], 5), false);
+
+  check('overlaps hit', fr.overlaps([0, 10, 20, 30], 5, 15), true);
+  check('overlaps exact gap (half-open)', fr.overlaps([0, 10, 20, 30], 10, 20), false);
+  check('overlaps spanning gap', fr.overlaps([0, 10, 20, 30], 9, 21), true);
+  check('overlaps empty query', fr.overlaps([0, 10], 5, 5), false);
+  check('overlaps empty ranges', fr.overlaps([], 0, 10), false);
+
+  check('equal true', fr.equal([0, 5, 10, 15], [0, 5, 10, 15]), true);
+  check('equal false value', fr.equal([0, 5], [0, 6]), false);
+  check('equal false length', fr.equal([0, 5], [0, 5, 10, 15]), false);
+  check('equal both empty', fr.equal([], []), true);
 })();
 
+// ---- unknown / first_unknown ----
 (function () {
-  assert(merge([0, 5, 10, 15]), [0, 5, 10, 15], 'merge non-overlapping');
+  check('unknown basic', fr.unknown([0, 30], [60, 100], 0, 100), [30, 60]);
+  check('unknown all known', fr.unknown([0, 100], [], 0, 100), []);
+  check('unknown nothing known', fr.unknown([], [], 0, 100), [0, 100]);
+
+  check('first_unknown basic', fr.first_unknown([0, 30], [60, 100], 0, 100), [30, 60]);
+  check('first_unknown clipped', fr.first_unknown([0, 30], [60, 100], 0, 100, 16), [30, 46]);
+  check('first_unknown none', fr.first_unknown([0, 100], [], 0, 100), null);
+  check('first_unknown at min', fr.first_unknown([10, 20], [], 0, 100), [0, 10]);
+  check('first_unknown interleaved cover',
+    fr.first_unknown([0, 10, 20, 30], [10, 20, 30, 45], 0, 100), [45, 100]);
 })();
 
+// ---- have / not-have ----
 (function () {
-  assert(merge([]), [], 'merge empty');
+  var have = [], notHave = [40, 60];
+  fr.add_have(have, notHave, [0, 100]);
+  check('add_have skips notHave', have, [0, 40, 60, 100]);
+  check('add_have leaves notHave', notHave, [40, 60]);
+
+  have = [0, 50]; notHave = [];
+  fr.add_not_have(have, notHave, [30, 80]);
+  check('add_not_have skips have', notHave, [50, 80]);
+
+  have = [0, 50]; notHave = [50, 70];
+  fr.set_have(have, notHave, [30, 100]);
+  check('set_have replaces have', have, [30, 100]);
+  check('set_have moves lost to notHave', notHave, [0, 30]);
+
+  have = [20, 40]; notHave = [0, 20, 40, 60];
+  fr.set_not_have(have, notHave, [50, 80]);
+  check('set_not_have replaces notHave', notHave, [50, 80]);
+  check('set_not_have moves lost to have', have, [0, 50]);
+
+  // idempotence: applying the same set twice → second returns false
+  have = [0, 10]; notHave = [];
+  fr.set_have(have, notHave, [0, 10]);
+  check('set_have idempotent returns false', fr.set_have(have, notHave, [0, 10]), false);
 })();
 
-(function () {
-  assert(merge([5, 5, 0, 3]), [0, 3], 'merge skips empty ranges');
-})();
+// ════════════════════════════════════════════════════════
+//  2. Property-based fuzz vs naive reference
+// ════════════════════════════════════════════════════════
+//
+// The reference represents coverage as a boolean array over
+// [0, DOMAIN). Slow but obviously correct.
 
-// ═══════════════════════════════════════════════════════════
-//  invert
-// ═══════════════════════════════════════════════════════════
-section('invert');
+var DOMAIN = 200;
 
-(function () {
-  assert(invert([2, 5, 8, 10], 0, 15), [0, 2, 5, 8, 10, 15], 'invert basic');
-})();
-
-(function () {
-  assert(invert([], 0, 10), [0, 10], 'invert empty — full domain');
-})();
-
-(function () {
-  assert(invert([0, 10], 0, 10), [], 'invert full coverage — empty');
-})();
-
-(function () {
-  assert(invert([0, 5], 0, 10), [5, 10], 'invert left half');
-})();
-
-(function () {
-  assert(invert([5, 10], 0, 10), [0, 5], 'invert right half');
-})();
-
-(function () {
-  assert(invert([0, 10], 0, 5), [], 'invert — ranges exceed domain');
-})();
-
-// ═══════════════════════════════════════════════════════════
-//  subtract_clip
-// ═══════════════════════════════════════════════════════════
-section('subtract_clip');
-
-(function () {
-  assert(subtract_clip([3, 7], [0, 10]), [0, 3, 7, 10], 'subtract_clip — removes overlap');
-})();
-
-(function () {
-  assert(subtract_clip([0, 10], [0, 10]), [], 'subtract_clip — full overlap');
-})();
-
-(function () {
-  assert(subtract_clip([20, 30], [0, 10]), [0, 10], 'subtract_clip — no overlap');
-})();
-
-(function () {
-  assert(subtract_clip([], [0, 10]), [0, 10], 'subtract_clip — empty base');
-})();
-
-(function () {
-  var sub = [0, 10];
-  subtract_clip([3, 7], sub);
-  assert(sub, [0, 10], 'subtract_clip — does not mutate input');
-})();
-
-// ═══════════════════════════════════════════════════════════
-//  length
-// ═══════════════════════════════════════════════════════════
-section('length');
-
-(function () {
-  assertVal(length([0, 5, 10, 15]), 10, 'length two ranges');
-})();
-
-(function () {
-  assertVal(length([]), 0, 'length empty');
-})();
-
-(function () {
-  assertVal(length([0, 100]), 100, 'length single range');
-})();
-
-// ═══════════════════════════════════════════════════════════
-//  unknown
-// ═══════════════════════════════════════════════════════════
-section('unknown');
-
-(function () {
-  assert(unknown([0, 5], [10, 15], 0, 20), [5, 10, 15, 20], 'unknown basic');
-})();
-
-(function () {
-  assert(unknown([10, 20], [0, 5], 0, 30), [5, 10, 20, 30],
-    'unknown — have after notHave (unsorted concat fix)');
-})();
-
-(function () {
-  assert(unknown([], [], 0, 10), [0, 10], 'unknown — everything unknown');
-})();
-
-(function () {
-  assert(unknown([0, 10], [10, 20], 0, 20), [], 'unknown — everything known');
-})();
-
-// ═══════════════════════════════════════════════════════════
-//  add_have
-// ═══════════════════════════════════════════════════════════
-section('add_have');
-
-(function () {
-  var have = [], notHave = [5, 10];
-  add_have(have, notHave, [0, 15]);
-  assert(have, [0, 5, 10, 15], 'add_have — skips notHave region');
-  assert(notHave, [5, 10], 'add_have — notHave unchanged');
-})();
-
-(function () {
-  var have = [0, 5], notHave = [];
-  var changed = add_have(have, notHave, [0, 5]);
-  assertVal(changed, false, 'add_have — duplicate returns false');
-})();
-
-(function () {
-  var have = [], notHave = [];
-  add_have(have, notHave, [10, 20]);
-  assert(have, [10, 20], 'add_have — both empty');
-})();
-
-// ═══════════════════════════════════════════════════════════
-//  add_not_have
-// ═══════════════════════════════════════════════════════════
-section('add_not_have');
-
-(function () {
-  var have = [5, 10], notHave = [];
-  add_not_have(have, notHave, [0, 15]);
-  assert(notHave, [0, 5, 10, 15], 'add_not_have — skips have region');
-  assert(have, [5, 10], 'add_not_have — have unchanged');
-})();
-
-(function () {
-  var have = [], notHave = [0, 5];
-  var changed = add_not_have(have, notHave, [0, 5]);
-  assertVal(changed, false, 'add_not_have — duplicate returns false');
-})();
-
-// ═══════════════════════════════════════════════════════════
-//  set_have
-// ═══════════════════════════════════════════════════════════
-section('set_have');
-
-(function () {
-  var have = [0, 10], notHave = [];
-  set_have(have, notHave, [0, 5]);
-  assert(have, [0, 5], 'set_have — shrink have');
-  assert(notHave, [5, 10], 'set_have — lost ranges move to notHave');
-})();
-
-(function () {
-  var have = [], notHave = [5, 15];
-  set_have(have, notHave, [0, 20]);
-  assert(have, [0, 20], 'set_have — authoritative override of notHave');
-  assert(notHave, [], 'set_have — notHave cleared by authority');
-})();
-
-(function () {
-  var have = [0, 10], notHave = [10, 15];
-  set_have(have, notHave, [5, 15]);
-  assert(have, [5, 15], 'set_have — partial overlap both sides');
-  assert(notHave, [0, 5], 'set_have — old have outside new → notHave');
-})();
-
-(function () {
-  var have = [0, 10], notHave = [];
-  var changed = set_have(have, notHave, [0, 10]);
-  assertVal(changed, false, 'set_have — same data returns false');
-})();
-
-(function () {
-  var have = [], notHave = [];
-  set_have(have, notHave, []);
-  assert(have, [], 'set_have — set empty on empty');
-  assert(notHave, [], 'set_have — notHave stays empty');
-})();
-
-(function () {
-  var have = [0, 5, 10, 15], notHave = [];
-  set_have(have, notHave, [3, 12]);
-  assert(have, [3, 12], 'set_have — complex transition');
-  assert(notHave, [0, 3, 12, 15], 'set_have — multiple fragments to notHave');
-})();
-
-// ═══════════════════════════════════════════════════════════
-//  set_not_have
-// ═══════════════════════════════════════════════════════════
-section('set_not_have');
-
-(function () {
-  var have = [], notHave = [0, 10];
-  set_not_have(have, notHave, [0, 5]);
-  assert(notHave, [0, 5], 'set_not_have — shrink notHave');
-  assert(have, [5, 10], 'set_not_have — lost ranges move to have');
-})();
-
-(function () {
-  var have = [5, 15], notHave = [];
-  set_not_have(have, notHave, [0, 20]);
-  assert(notHave, [0, 20], 'set_not_have — authoritative override of have');
-  assert(have, [], 'set_not_have — have cleared by authority');
-})();
-
-(function () {
-  var have = [], notHave = [0, 10];
-  var changed = set_not_have(have, notHave, [0, 10]);
-  assertVal(changed, false, 'set_not_have — same data returns false');
-})();
-
-(function () {
-  var have = [10, 15], notHave = [0, 10];
-  set_not_have(have, notHave, [5, 20]);
-  assert(notHave, [5, 20], 'set_not_have — partial overlap both sides');
-  assert(have, [0, 5], 'set_not_have — old notHave outside new → have');
-})();
-
-// ═══════════════════════════════════════════════════════════
-//  Integrity: have ∩ notHave = ∅
-// ═══════════════════════════════════════════════════════════
-section('Integrity: have \u2229 notHave = \u2205');
-
-function hasOverlap(a, b) {
-  for (var i = 0; i < a.length; i += 2) {
-    for (var j = 0; j < b.length; j += 2) {
-      if (a[i] < b[j + 1] && a[i + 1] > b[j]) return true;
-    }
+function toBits(ranges) {
+  var bits = new Array(DOMAIN).fill(false);
+  for (var i = 0; i < ranges.length; i += 2) {
+    for (var v = Math.max(0, ranges[i]); v < Math.min(DOMAIN, ranges[i + 1]); v++) bits[v] = true;
   }
-  return false;
+  return bits;
 }
 
-(function () {
-  var have = [0, 50], notHave = [50, 100];
-  add_have(have, notHave, [30, 70]);
-  assertVal(hasOverlap(have, notHave), false, 'add_have — no overlap');
-})();
-
-(function () {
-  var have = [0, 50], notHave = [50, 100];
-  add_not_have(have, notHave, [30, 70]);
-  assertVal(hasOverlap(have, notHave), false, 'add_not_have — no overlap');
-})();
-
-(function () {
-  var have = [0, 30, 60, 100], notHave = [30, 60];
-  set_have(have, notHave, [20, 80]);
-  assertVal(hasOverlap(have, notHave), false, 'set_have — no overlap');
-})();
-
-(function () {
-  var have = [30, 60], notHave = [0, 30, 60, 100];
-  set_not_have(have, notHave, [20, 80]);
-  assertVal(hasOverlap(have, notHave), false, 'set_not_have — no overlap');
-})();
-
-// ═══════════════════════════════════════════════════════════
-//  Edge cases
-// ═══════════════════════════════════════════════════════════
-section('Edge cases');
-
-(function () {
-  var r = [0, 1000000];
-  remove(r, [1, 2, 100, 200, 999998, 999999]);
-  assert(r, [0, 1, 2, 100, 200, 999998, 999999, 1000000],
-    'large range with small removals');
-})();
-
-(function () {
-  var r = [];
-  add(r, [5, 6, 4, 7, 3, 8, 2, 9, 1, 10, 0, 11]);
-  assert(r, [0, 11], 'add many overlapping unsorted — single merged range');
-})();
-
-(function () {
-  var r = [10, 20];
-  remove(r, [12, 14, 14, 16, 16, 18]);
-  assert(r, [10, 12, 18, 20], 'remove contiguous removals');
-})();
-
-(function () {
-  var r = [0, 10];
-  remove(r, [0, 10, 0, 10]);
-  assert(r, [], 'remove duplicate removal ranges');
-})();
-
-// ═══════════════════════════════════════════════════════════
-//  UMD module shape
-// ═══════════════════════════════════════════════════════════
-section('UMD module shape');
-
-(function () {
-  var methods = [
-    'add', 'remove', 'merge', 'invert', 'subtract_clip',
-    'length', 'unknown', 'add_have', 'add_not_have',
-    'set_have', 'set_not_have'
-  ];
-  var allPresent = true;
-  for (var i = 0; i < methods.length; i++) {
-    if (typeof flatRanges[methods[i]] !== 'function') {
-      allPresent = false;
-      break;
-    }
+function toRanges(bits) {
+  var out = [], start = -1;
+  for (var v = 0; v <= DOMAIN; v++) {
+    var on = v < DOMAIN && bits[v];
+    if (on && start === -1) start = v;
+    if (!on && start !== -1) { out.push(start, v); start = -1; }
   }
-  assertVal(allPresent, true, 'all 11 methods exported');
-  assertVal(typeof flatRanges.default, 'object', 'default export exists');
-  assertVal(typeof flatRanges.default.add, 'function', 'default.add is a function');
-})();
-
-// ═══════════════════════════════════════════════════════════
-//  Summary
-// ═══════════════════════════════════════════════════════════
-
-console.log('\n\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550');
-if (failed === 0) {
-  console.log('\u2713 All ' + passed + ' assertions passed!');
-} else {
-  console.log('\u2717 ' + failed + ' of ' + totalAssertions + ' assertions FAILED');
-}
-console.log('\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\n');
-
-if (failed > 0) { process.exit(1); }
-
-// ═══════════════════════════════════════════════════════════
-//  Performance benchmarks
-// ═══════════════════════════════════════════════════════════
-
-console.log('\n\u2501\u2501\u2501 Performance benchmarks \u2501\u2501\u2501\n');
-
-function bench(label, setup, fn, iterations) {
-  // warmup
-  for (var w = 0; w < 100; w++) fn(setup());
-
-  var start = performance.now();
-  for (var i = 0; i < iterations; i++) fn(setup());
-  var elapsed = performance.now() - start;
-  var opsPerSec = Math.round(iterations / (elapsed / 1000));
-  console.log('  ' + label + ': ' + opsPerSec.toLocaleString() + ' ops/sec (' + elapsed.toFixed(1) + 'ms / ' + iterations + ' iters)');
+  return out;
 }
 
-// Benchmark 1: add single range to large array
-bench(
-  'add 1 range into 10,000 ranges',
-  function () {
-    var r = [];
-    for (var i = 0; i < 10000; i++) r.push(i * 3, i * 3 + 1);
-    return r;
-  },
-  function (r) { add(r, [15000, 15002]); },
-  50000
-);
+function randNormalized(maxPairs) {
+  var bits = new Array(DOMAIN).fill(false);
+  var pairs = 1 + (Math.random() * maxPairs | 0);
+  for (var i = 0; i < pairs; i++) {
+    var from = Math.random() * DOMAIN | 0;
+    var len = 1 + (Math.random() * 25 | 0);
+    for (var v = from; v < Math.min(DOMAIN, from + len); v++) bits[v] = true;
+  }
+  return toRanges(bits);
+}
 
-// Benchmark 2: add single range that merges many
-bench(
-  'add 1 range merging 1,000 ranges',
-  function () {
-    var r = [];
-    for (var i = 0; i < 1000; i++) r.push(i * 3, i * 3 + 1);
-    return r;
-  },
-  function (r) { add(r, [0, 3000]); },
-  10000
-);
+function randRawBatch(maxPairs) {
+  // unsorted, possibly-overlapping, possibly-empty ranges
+  var out = [];
+  var pairs = 1 + (Math.random() * maxPairs | 0);
+  for (var i = 0; i < pairs; i++) {
+    var from = Math.random() * DOMAIN | 0;
+    var to = from + (Math.random() * 25 | 0);   // may be empty (from===to)
+    out.push(from, Math.min(to, DOMAIN));
+  }
+  return out;
+}
 
-// Benchmark 3: remove multiple holes from large range
-bench(
-  'remove 100 holes from [0, 100000)',
-  function () { return [0, 100000]; },
-  function (r) {
-    var holes = [];
-    for (var i = 0; i < 100; i++) holes.push(i * 1000 + 100, i * 1000 + 200);
-    remove(r, holes);
-  },
-  50000
-);
+var FUZZ_ITERS = 5000;
+var fuzzFails = 0;
 
-// Benchmark 4: sequential add — simulate streaming data
-bench(
-  'sequential add: 1,000 single ranges',
-  function () { return []; },
-  function (r) {
-    for (var i = 0; i < 1000; i++) add(r, [i * 2, i * 2 + 1]);
-  },
-  1000
-);
+function fuzzFail(op, ctx) {
+  fuzzFails++; failed++;
+  if (fuzzFails <= 5) console.error('FUZZ FAIL [' + op + ']: ' + JSON.stringify(ctx));
+}
 
-// Benchmark 5: set_have with large arrays
-bench(
-  'set_have: 500 ranges, new state = 500 ranges',
-  function () {
-    var have = [], notHave = [];
-    for (var i = 0; i < 500; i++) have.push(i * 4, i * 4 + 2);
-    for (var i = 0; i < 500; i++) notHave.push(i * 4 + 2, i * 4 + 4);
-    return { have: have, notHave: notHave };
-  },
-  function (s) {
-    var newHave = [];
-    for (var i = 0; i < 500; i++) newHave.push(i * 4 + 1, i * 4 + 3);
-    set_have(s.have, s.notHave, newHave);
-  },
-  5000
-);
+for (var t = 0; t < FUZZ_ITERS; t++) {
+  var base = randNormalized(8);
+  var bits = toBits(base);
 
-// Benchmark 6: unknown on large state
-bench(
-  'unknown: 5,000 have + 5,000 notHave',
-  function () {
-    var have = [], notHave = [];
-    for (var i = 0; i < 5000; i++) have.push(i * 6, i * 6 + 2);
-    for (var i = 0; i < 5000; i++) notHave.push(i * 6 + 2, i * 6 + 4);
-    return { have: have, notHave: notHave };
-  },
-  function (s) { unknown(s.have, s.notHave, 0, 30000); },
-  5000
-);
+  // -- add (single + batch) --
+  var batch = t % 2 === 0 ? randRawBatch(1) : randRawBatch(8);
+  var r1 = base.slice();
+  fr.add(r1, batch.slice());
+  var refBits = bits.slice();
+  for (var i = 0; i < batch.length; i += 2)
+    for (var v = batch[i]; v < batch[i + 1]; v++) refBits[v] = true;
+  if (!eq(r1, toRanges(refBits))) fuzzFail('add', { base: base, batch: batch, got: r1, want: toRanges(refBits) });
 
+  // -- remove (sorted, per contract) --
+  var rem = randNormalized(5);
+  var r2 = base.slice();
+  fr.remove(r2, rem);
+  refBits = bits.slice();
+  for (var i = 0; i < rem.length; i += 2)
+    for (var v = rem[i]; v < rem[i + 1]; v++) refBits[v] = false;
+  if (!eq(r2, toRanges(refBits))) fuzzFail('remove', { base: base, rem: rem, got: r2, want: toRanges(refBits) });
+
+  // -- intersect --
+  var other = randNormalized(6);
+  var got = fr.intersect(base, other);
+  var otherBits = toBits(other);
+  refBits = bits.map(function (b, idx) { return b && otherBits[idx]; });
+  if (!eq(got, toRanges(refBits))) fuzzFail('intersect', { a: base, b: other, got: got, want: toRanges(refBits) });
+
+  // -- invert --
+  got = fr.invert(base, 0, DOMAIN);
+  refBits = bits.map(function (b) { return !b; });
+  if (!eq(got, toRanges(refBits))) fuzzFail('invert', { base: base, got: got, want: toRanges(refBits) });
+
+  // -- subtract_clip --
+  got = fr.subtract_clip(base, other);
+  refBits = otherBits.map(function (b, idx) { return b && !bits[idx]; });
+  if (!eq(got, toRanges(refBits))) fuzzFail('subtract_clip', { base: base, sub: other, got: got, want: toRanges(refBits) });
+
+  // -- length / contains / overlaps --
+  var refLen = bits.reduce(function (s, b) { return s + (b ? 1 : 0); }, 0);
+  if (fr.length(base) !== refLen) fuzzFail('length', { base: base, got: fr.length(base), want: refLen });
+
+  var val = Math.random() * DOMAIN | 0;
+  if (fr.contains(base, val) !== !!bits[val]) fuzzFail('contains', { base: base, val: val });
+
+  var qf = Math.random() * DOMAIN | 0, qt = qf + (Math.random() * 30 | 0);
+  var refOv = false;
+  for (var v = qf; v < Math.min(qt, DOMAIN); v++) if (bits[v]) { refOv = true; break; }
+  if (fr.overlaps(base, qf, qt) !== refOv) fuzzFail('overlaps', { base: base, from: qf, to: qt });
+
+  // -- unknown / first_unknown --
+  var nh = fr.subtract_clip(base, randNormalized(4));     // disjoint from base by construction
+  got = fr.unknown(base, nh, 0, DOMAIN);
+  var nhBits = toBits(nh);
+  refBits = bits.map(function (b, idx) { return !b && !nhBits[idx]; });
+  if (!eq(got, toRanges(refBits))) fuzzFail('unknown', { have: base, nh: nh, got: got, want: toRanges(refBits) });
+
+  var fu = fr.first_unknown(base, nh, 0, DOMAIN);
+  var wantRanges = toRanges(refBits);
+  var wantFu = wantRanges.length ? [wantRanges[0], wantRanges[1]] : null;
+  if (!eq(fu, wantFu)) fuzzFail('first_unknown', { have: base, nh: nh, got: fu, want: wantFu });
+
+  // -- set_have invariants --
+  var h = base.slice(), n2 = nh.slice();
+  var newHave = randNormalized(5);
+  fr.set_have(h, n2, newHave.slice());
+  // invariant 1: h equals normalised newHave
+  if (!eq(h, newHave)) fuzzFail('set_have h', { got: h, want: newHave });
+  // invariant 2: n2 == (base ∪ nh) \ newHave
+  var unionBits = bits.map(function (b, idx) { return b || nhBits[idx]; });
+  var newHaveBits = toBits(newHave);
+  refBits = unionBits.map(function (b, idx) { return b && !newHaveBits[idx]; });
+  if (!eq(n2, toRanges(refBits))) fuzzFail('set_have nh', { got: n2, want: toRanges(refBits) });
+  // invariant 3: have and notHave never overlap
+  if (fr.intersect(h, n2).length !== 0) fuzzFail('set_have overlap invariant', { h: h, nh: n2 });
+}
+
+// ════════════════════════════════════════════════════════
+//  Results
+// ════════════════════════════════════════════════════════
 console.log('');
+console.log('unit + fuzz assertions passed: ' + passed);
+if (failed > 0) {
+  console.error('FAILED: ' + failed);
+  process.exit(1);
+} else {
+  console.log('all tests passed ✓  (' + FUZZ_ITERS + ' fuzz iterations)');
+}
