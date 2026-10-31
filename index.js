@@ -20,6 +20,10 @@
  *   - remove() has an O(1) fast-reject when the removal window falls
  *     entirely outside the covered span, and never touches the array
  *     when nothing changed.
+ *   - remove() of a single range goes through removeOne: binary search
+ *     to the ranges it cuts, edited in place — O(log n + k), no new array.
+ *     It was a full sweep that rebuilt the whole list into a new array and
+ *     copied it back, for every call, however small the cut.
  *   - Deliberately NOT using copyWithin: measured ~10x slower than a
  *     plain indexed loop for this access pattern on V8.
  *
@@ -247,14 +251,87 @@
   }
 
   // ────────────────────────────────────────────────────
+  //  Internal: remove a single [from, to) from sorted ranges,
+  //  in place — the twin of addOne. Binary search finds the
+  //  pairs the cut touches; only they change, and the tail is
+  //  shifted once if their count does. O(log n + k), zero
+  //  allocations.
+  //
+  //  The result is remove()'s, for every list this library
+  //  maintains (sorted, non-overlapping, no empty pairs): the
+  //  pieces of the touched pairs that lie outside [from, to)
+  //  stay, everything else is untouched. Returns true iff
+  //  something was removed; on false the array is untouched.
+  // ────────────────────────────────────────────────────
+  function removeOne(ranges, from, to) {
+    if (from >= to) return false;
+    var n = ranges.length;
+    if (n === 0) return false;
+    if (to <= ranges[0] || from >= ranges[n - 1]) return false;   // fast reject
+
+    var pairs = n >> 1;
+    // First pair whose `to` > from — the first one the cut can reach.
+    var lo = 0, hi = pairs;
+    while (lo < hi) {
+      var mid = (lo + hi) >> 1;
+      if (ranges[(mid << 1) + 1] <= from) lo = mid + 1;
+      else hi = mid;
+    }
+    var first = lo;
+    if (first >= pairs || ranges[first << 1] >= to) return false;   // falls in a gap
+
+    // First pair whose `from` >= to — past the cut.
+    lo = first + 1; hi = pairs;
+    while (lo < hi) {
+      var mid2 = (lo + hi) >> 1;
+      if (ranges[mid2 << 1] < to) lo = mid2 + 1;
+      else hi = mid2;
+    }
+    var end = lo;                        // pairs [first, end) are cut
+
+    var f2 = first << 1;
+    var leftFrom = ranges[f2];
+    var rightTo = ranges[((end - 1) << 1) + 1];
+    var keepLeft = leftFrom < from;      // [leftFrom, from) survives
+    var keepRight = rightTo > to;        // [to, rightTo) survives
+    var cut = end - first;               // pairs removed
+    var put = (keepLeft ? 1 : 0) + (keepRight ? 1 : 0);   // pairs written back
+
+    if (put > cut) {
+      // One pair cut in the middle → two. Grow by one pair with push()
+      // (keeps the array PACKED — see addOne), shift the tail right.
+      ranges.push(ranges[n - 2], ranges[n - 1]);
+      for (var i = n - 1; i >= f2 + 4; i--) ranges[i] = ranges[i - 2];
+      ranges[f2] = leftFrom; ranges[f2 + 1] = from;
+      ranges[f2 + 2] = to;   ranges[f2 + 3] = rightTo;
+      return true;
+    }
+
+    var w = f2;
+    if (keepLeft) { ranges[w] = leftFrom; ranges[w + 1] = from; w += 2; }
+    if (keepRight) { ranges[w] = to; ranges[w + 1] = rightTo; w += 2; }
+    if (put < cut) {
+      // Shift the tail left over the pairs that went.
+      var src = end << 1;
+      while (src < n) ranges[w++] = ranges[src++];
+      ranges.length = w;
+    }
+    return true;
+  }
+
+  // ────────────────────────────────────────────────────
   //  remove(ranges, removeRanges)
-  //  Two-pointer sweep, O(n + m). Inlined iteration
+  //  One range: removeOne (binary search, in place).
+  //  More: two-pointer sweep, O(n + m). Inlined iteration
   //  (no closure/function overhead).
   // ────────────────────────────────────────────────────
   function remove(ranges, removeRanges) {
     var rn = removeRanges.length;
     var n = ranges.length;
     if (rn === 0 || n === 0) return false;
+
+    // Fast path: a single range (most common case — as in add)
+    if (rn === 2) return removeOne(ranges, removeRanges[0], removeRanges[1]);
 
     // ── Fast reject ───────────────────────────────────
     // Removal window entirely before or after our span →
