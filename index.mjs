@@ -18,3 +18,4 @@ export const add_have = flatRanges.add_have;
 export const add_not_have = flatRanges.add_not_have;
 export const set_have = flatRanges.set_have;
 export const set_not_have = flatRanges.set_not_have;
+export const ring = flatRanges.ring;

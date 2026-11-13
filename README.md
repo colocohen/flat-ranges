@@ -229,6 +229,36 @@ flatRanges.length(free);  // → 6.5 hours free
 !flatRanges.overlaps(booked, 13, 13.5);  // → true
 ```
 
+### Circular domains: night shifts, angles, hash rings
+
+When the domain wraps around — hours of the day, compass bearings, a consistent-hashing ring, a ring buffer — use `ring(size)`. Ranges may cross the wrap point:
+
+```js
+var day = flatRanges.ring(24);
+
+var staffed = [];
+day.add(staffed, [22, 6]);          // night shift, 22:00 → 06:00
+day.add(staffed, [9, 17]);          // day shift
+// staffed → [0, 6, 9, 17, 22, 24]  (ordinary flat format)
+
+day.runs(staffed);                  // → [9, 17, 22, 6]  (seen on the clock)
+day.count(staffed);                 // → 2 shifts, not 3
+day.contains(staffed, 23);          // → true
+day.invert(staffed);                // → [6, 9, 17, 22]  uncovered hours
+
+// Next uncovered slot after 20:00, at most 2 hours long?
+day.first_unknown(staffed, [], 20, 44, 2);   // → [20, 22]
+```
+
+```js
+// Which part of a hash ring does this node not hold yet?
+var space = flatRanges.ring(2 ** 32);
+var held = [];
+space.add(held, [4000000000, 100000000]);    // crosses 0
+space.first_unknown(held, [], 4000000000, 4000000000 + 2 ** 32);
+// → [100000000, 4000000000]
+```
+
 ## API
 
 ### Core operations
@@ -389,6 +419,52 @@ flatRanges.first_unknown([0, 30], [60, 100], 0, 100, 16);   // → [30, 46]
 flatRanges.first_unknown([0, 100], [], 0, 100);             // → null
 ```
 
+### Circular ranges
+
+#### `ring(size)`
+
+Returns the circular API for a circle of `size` positions, where `size − 1` is followed by `0`. Throws `RangeError` unless `size` is a positive finite number.
+
+**Input rules** for a circular pair `[from, to)`:
+
+- it runs forward from `from` to `to`; when `to < from` it wraps past 0 — on `ring(24)`, `[22, 2)` is 22, 23, 0, 1;
+- positions are taken modulo `size`, so negatives and values ≥ `size` are fine;
+- `from === to` is **empty**, as in the core;
+- `to − from >= size` is the **whole circle**: write it `[0, size)` or `[x, x + size)`.
+
+**Storage** is the ordinary flat format, so every core function keeps working on ring arrays. A run that crosses 0 is stored as two pieces, `[x, size)` and `[0, y)`. This form is canonical: the same set of positions always gives the same array, which makes ring arrays safe to compare, hash and send over the wire.
+
+Functions that take **new** ranges (`add`, `remove`, `overlaps`, `subtract_clip`, the have/notHave family) accept circular pairs in any order. Arrays the ring maintains are passed as they are.
+
+| Function | Notes |
+|---|---|
+| `normalize(circular)` | Circular pairs → new canonical array. |
+| `add(ranges, circular)` / `remove(ranges, circular)` | In place, return `true` if changed. `remove` accepts any order (unlike the core). |
+| `invert(ranges)` | Everything on the circle not covered. |
+| `intersect(a, b)`, `length(ranges)`, `equal(a, b)` | Same as the core. |
+| `subtract_clip(base, circular)` | Parts of the circular pairs not in `base`. |
+| `contains(ranges, value)` | `value` taken modulo `size`. |
+| `overlaps(ranges, from, to)` | The query may wrap. |
+| `unknown(have, notHave[, from, to])` | Whole circle by default, or a circular window. |
+| `first_unknown(have, notHave[, from, to[, maxLen]])` | Scans forward from `from`. A gap that crosses 0 comes back whole as `[from, to]` with `to < from`. Pass `null` for the window to scan the whole circle from 0. |
+| `add_have`, `add_not_have`, `set_have`, `set_not_have` | As in the core, with circular input. |
+| `wraps(ranges)` | `true` when one run crosses 0. |
+| `count(ranges)` | Runs as seen on the circle — a run across 0 counts once. |
+| `runs(ranges)` | Circular view: the run across 0 comes last as `[from, to]` with `to < from`. |
+| `mod(x)` | `x` folded into `[0, size)`. |
+| `distance(a, b)` | Shortest distance either way round. |
+| `center(ranges)` | Circular mean of the covered positions; `null` if undefined (nothing covered, or spread evenly). |
+| `concentration(ranges)` | 1 when coverage sits at one point, 0 when spread evenly. |
+
+```js
+var compass = flatRanges.ring(360);
+var sector = compass.normalize([350, 10]);   // → [0, 10, 350, 360]
+compass.center(sector);                      // → 0
+compass.distance(350, 10);                   // → 20
+```
+
+`center` and `concentration` use floating-point trigonometry: fine for analytics and heuristics, but don't use them where every machine must get bit-identical results (consensus code, for example).
+
 ## How it compares
 
 | Library | What it does | flat-ranges difference |
@@ -430,9 +506,11 @@ Benchmarked on Node.js (ops/sec, higher is better):
 npm test
 ```
 
-The test suite includes both unit tests and thousands of property-based fuzz iterations verified against a naive reference implementation.
+The test suite includes both unit tests and thousands of property-based fuzz iterations verified against a naive reference implementation — for the linear core (`test.js`) and for circular ranges (`test-ring.js`).
 
 ## Migrating
+
+**v2.2 → v2.3** — new `ring(size)` for circular domains (see [Circular ranges](#circular-ranges)); the core is unchanged except for one fix: `invert` (and so `unknown`) now clips its result to `[fullStart, fullEnd)` as documented. Before, a range reaching past the window produced gaps outside it — `invert([0, 5, 6, 8], 0, 4)` returned `[5, 6]` instead of `[]`. Calls whose window covers all the ranges, the usual case, are unaffected.
 
 **v2.1 → v2.2** — no breaking changes. New functions: `intersect`, `overlaps`, `equal`, `first_unknown`. TypeScript definitions added. One behavioral refinement: when `remove` changes nothing, the target array is now guaranteed untouched (previously it was rewritten with identical, normalised content — irrelevant unless you passed a non-normalised array, which was outside the documented contract).
 

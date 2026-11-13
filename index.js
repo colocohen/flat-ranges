@@ -1,5 +1,5 @@
 /**
- * flat-ranges v2.2.0
+ * flat-ranges v2.3.0
  * Lightweight utility for managing flat range lists: [from1, to1, from2, to2, ...]
  *
  * All ranges are half-open intervals [from, to) where from < to.
@@ -440,6 +440,10 @@
 
   // ────────────────────────────────────────────────────
   //  invert(ranges, fullStart, fullEnd)
+  //  The result is clipped to [fullStart, fullEnd) even when
+  //  ranges reach past it (v2.3.0 fix: before, a range past
+  //  fullEnd produced gaps outside the window, e.g.
+  //  invert([0, 5, 6, 8], 0, 4) gave [5, 6] instead of []).
   // ────────────────────────────────────────────────────
   function invert(ranges, fullStart, fullEnd) {
     var result = [];
@@ -449,6 +453,7 @@
       var from = ranges[i];
       var to = ranges[i + 1];
       if (from >= to) continue;
+      if (from >= fullEnd) break;   // sorted: nothing further is inside
       if (from > last) result.push(last, from);
       if (to > last) last = to;
     }
@@ -722,6 +727,259 @@
     return changed;
   }
 
+  // ────────────────────────────────────────────────────
+  //  ring(size) — circular ranges on [0, size)        (v2.3.0)
+  //
+  //  Positions live on a circle: size − 1 is followed by 0.
+  //  A circular range [from, to) runs forward from `from` to
+  //  `to`; when to < from it wraps past 0:
+  //
+  //    on a ring of 24:  [22, 2)  →  22, 23, 0, 1
+  //
+  //  Storage is the ordinary flat format, so every core
+  //  function keeps working on ring arrays. A range that
+  //  wraps is stored as its two linear pieces, [22, 24) and
+  //  [0, 2). That form is canonical: the same set of
+  //  positions always gives the same array.
+  //
+  //  Input rules for a circular pair [from, to):
+  //    - positions are taken modulo size (negatives allowed);
+  //    - from === to is EMPTY, as in the core;
+  //    - to − from ≥ size is the WHOLE circle, so the full
+  //      ring is written [0, size) or [x, x + size).
+  //
+  //  Functions that take NEW ranges (add, remove, overlaps,
+  //  subtract_clip, the have/notHave family) accept circular
+  //  pairs. Arrays the ring already maintains are canonical
+  //  and are passed as they are.
+  //
+  //  The core is untouched; this is a thin layer over it.
+  // ────────────────────────────────────────────────────
+  function ring(size) {
+    if (typeof size !== 'number' || !(size > 0) || size === Infinity) {
+      throw new RangeError('flat-ranges ring(size): size must be a positive finite number');
+    }
+    var N = size;
+
+    // Always in [0, size). `+ 0` turns -0 into 0; a tiny negative
+    // like -1e-17 rounds to exactly size when shifted, so fold it.
+    function mod(x) {
+      var m = x % N;
+      if (m < 0) { m += N; if (m >= N) m = 0; }
+      return m + 0;
+    }
+
+    // Push the linear pieces of circular [from, to) onto out,
+    // in forward order starting at `from`.
+    function pushPieces(out, from, to) {
+      var len = to - from;
+      if (len >= N) { out.push(0, N); return; }
+      if (len < 0) len = mod(len);
+      if (!(len > 0)) return;              // empty (also skips NaN)
+      var start = mod(from);
+      var end = start + len;
+      if (end <= N) out.push(start, end);
+      else out.push(start, N, 0, end - N);
+    }
+
+    // Like pushPieces, but a whole-circle window keeps its
+    // starting point, so scans begin where the caller asked.
+    function windowPieces(from, to) {
+      var w = [];
+      if (from == null) { w.push(0, N); return w; }
+      if (to - from >= N) {
+        var s = mod(from);
+        if (s === 0) w.push(0, N);
+        else w.push(s, N, 0, s);
+        return w;
+      }
+      pushPieces(w, from, to);
+      return w;
+    }
+
+    // Circular pairs → canonical array (new, sorted, merged).
+    function normalize(circular) {
+      var pieces = [];
+      for (var i = 0; i + 1 < circular.length; i += 2) {
+        pushPieces(pieces, circular[i], circular[i + 1]);
+      }
+      var out = [];
+      add(out, pieces);
+      return out;
+    }
+
+    // True when one run crosses 0: stored as [0, …] … [… , size).
+    function wraps(ranges) {
+      var n = ranges.length;
+      return n >= 4 && ranges[0] === 0 && ranges[n - 1] === N;
+    }
+
+    // Number of runs as seen on the circle.
+    function count(ranges) {
+      var pairs = ranges.length >> 1;
+      return wraps(ranges) ? pairs - 1 : pairs;
+    }
+
+    // Circular view: the wrapping run comes last as [from, to]
+    // with to < from. A full ring is [0, size].
+    function runs(ranges) {
+      if (!wraps(ranges)) return ranges.slice();
+      var n = ranges.length;
+      var out = ranges.slice(2, n - 2);
+      out.push(ranges[n - 2], ranges[1]);
+      return out;
+    }
+
+    function ringAdd(ranges, circular) {
+      return add(ranges, normalize(circular));
+    }
+
+    function ringRemove(ranges, circular) {
+      return remove(ranges, normalize(circular));
+    }
+
+    function ringInvert(ranges) {
+      return invert(ranges, 0, N);
+    }
+
+    function ringSubtractClip(baseRanges, circular) {
+      return subtract_clip(baseRanges, normalize(circular));
+    }
+
+    function ringContains(ranges, value) {
+      return contains(ranges, mod(value));
+    }
+
+    function ringOverlaps(ranges, from, to) {
+      var p = [];
+      pushPieces(p, from, to);
+      for (var i = 0; i < p.length; i += 2) {
+        if (overlaps(ranges, p[i], p[i + 1])) return true;
+      }
+      return false;
+    }
+
+    // unknown(have, notHave[, from, to]) — whole ring by default.
+    function ringUnknown(have_ranges, not_have_ranges, from, to) {
+      var w = windowPieces(from, to);
+      var out = [];
+      for (var i = 0; i < w.length; i += 2) {
+        add(out, unknown(have_ranges, not_have_ranges, w[i], w[i + 1]));
+      }
+      return out;
+    }
+
+    // first_unknown(have, notHave[, from, to[, maxLen]])
+    // Scans forward from `from`. A gap that crosses 0 is
+    // returned whole, as [from, to] with to < from; a gap
+    // covering the whole window of a full ring is [x, x + size].
+    function ringFirstUnknown(have_ranges, not_have_ranges, from, to, maxLen) {
+      var w = windowPieces(from, to);
+      for (var i = 0; i < w.length; i += 2) {
+        var g = first_unknown(have_ranges, not_have_ranges, w[i], w[i + 1]);
+        if (g === null) continue;
+        var gFrom = g[0];
+        var len = g[1] - gFrom;
+        if (g[1] === N && i + 2 < w.length && w[i + 2] === 0) {
+          var g2 = first_unknown(have_ranges, not_have_ranges, 0, w[i + 3]);
+          if (g2 !== null && g2[0] === 0) len += g2[1];
+        }
+        if (maxLen != null && len > maxLen) len = maxLen;
+        if (len >= N) return [gFrom, gFrom + N];
+        var gTo = gFrom + len;
+        if (gTo > N) gTo -= N;
+        return [gFrom, gTo];
+      }
+      return null;
+    }
+
+    function ringAddHave(knownHave, knownNotHave, newHave) {
+      return add_have(knownHave, knownNotHave, normalize(newHave));
+    }
+
+    function ringAddNotHave(knownHave, knownNotHave, newNotHave) {
+      return add_not_have(knownHave, knownNotHave, normalize(newNotHave));
+    }
+
+    function ringSetHave(knownHave, knownNotHave, newHave) {
+      return set_have(knownHave, knownNotHave, normalize(newHave));
+    }
+
+    function ringSetNotHave(knownHave, knownNotHave, newNotHave) {
+      return set_not_have(knownHave, knownNotHave, normalize(newNotHave));
+    }
+
+    // Shortest way round between two positions.
+    function distance(a, b) {
+      var d = mod(b - a);
+      return d > N - d ? N - d : d;
+    }
+
+    // Resultant of the covered positions as unit vectors:
+    // each [a, b) contributes ∫ (cos kt, sin kt) dt, written in
+    // half-angle form to stay exact for short arcs on big rings.
+    function resultant(ranges) {
+      var k = 2 * Math.PI / N;
+      var x = 0, y = 0, total = 0;
+      for (var i = 0; i < ranges.length; i += 2) {
+        var a = ranges[i], b = ranges[i + 1];
+        if (!(b > a)) continue;
+        var m = k * (a + b) / 2;
+        var r = 2 * Math.sin(k * (b - a) / 2) / k;
+        x += r * Math.cos(m);
+        y += r * Math.sin(m);
+        total += b - a;
+      }
+      return { x: x, y: y, total: total };
+    }
+
+    // Circular mean of the covered positions, or null when it is
+    // undefined (nothing covered, or coverage evenly spread).
+    // Floating point: not for results that must match bit-for-bit
+    // across machines.
+    function center(ranges) {
+      var v = resultant(ranges);
+      if (v.total === 0) return null;
+      if (Math.sqrt(v.x * v.x + v.y * v.y) / v.total < 1e-9) return null;
+      return mod(Math.atan2(v.y, v.x) * N / (2 * Math.PI));
+    }
+
+    // 1 when everything sits at one point, 0 when it is spread
+    // evenly round the ring.
+    function concentration(ranges) {
+      var v = resultant(ranges);
+      if (v.total === 0) return 0;
+      return Math.sqrt(v.x * v.x + v.y * v.y) / v.total;
+    }
+
+    return {
+      size: N,
+      normalize: normalize,
+      add: ringAdd,
+      remove: ringRemove,
+      invert: ringInvert,
+      intersect: intersect,
+      subtract_clip: ringSubtractClip,
+      length: length,
+      contains: ringContains,
+      overlaps: ringOverlaps,
+      equal: equal,
+      unknown: ringUnknown,
+      first_unknown: ringFirstUnknown,
+      add_have: ringAddHave,
+      add_not_have: ringAddNotHave,
+      set_have: ringSetHave,
+      set_not_have: ringSetNotHave,
+      wraps: wraps,
+      count: count,
+      runs: runs,
+      mod: mod,
+      distance: distance,
+      center: center,
+      concentration: concentration
+    };
+  }
+
   return {
     add: add,
     remove: remove,
@@ -738,7 +996,8 @@
     add_have: add_have,
     add_not_have: add_not_have,
     set_have: set_have,
-    set_not_have: set_not_have
+    set_not_have: set_not_have,
+    ring: ring
   };
 
 }));

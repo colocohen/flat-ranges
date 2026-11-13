@@ -1,5 +1,5 @@
 /**
- * flat-ranges v2.2.0 — TypeScript definitions
+ * flat-ranges v2.3.0 — TypeScript definitions
  *
  * Ranges are stored as flat arrays of half-open intervals:
  *   [from1, to1, from2, to2, ...]
@@ -136,6 +136,113 @@ export function set_have(have: FlatRanges, notHave: FlatRanges, newHave: FlatRan
  */
 export function set_not_have(have: FlatRanges, notHave: FlatRanges, newNotHave: FlatRanges): boolean;
 
+/**
+ * Ranges on a circle of `size` positions, where size − 1 is followed by 0.
+ *
+ * A circular pair [from, to) runs forward from `from` to `to`; when
+ * `to < from` it wraps past 0. Positions are taken modulo `size`,
+ * `from === to` is empty, and `to − from >= size` is the whole circle.
+ *
+ * Arrays are stored in the ordinary canonical flat format: a run that
+ * crosses 0 is kept as two pieces, [x, size) and [0, y). Functions that
+ * take NEW ranges accept circular pairs; arrays the ring maintains are
+ * passed as they are.
+ */
+export interface Ring {
+  /** The circle size this ring was created with. */
+  readonly size: number;
+
+  /** Circular pairs → a NEW canonical array (sorted, merged, in [0, size)). */
+  normalize(circular: FlatRanges): FlatRanges;
+
+  /** Adds circular pairs into `ranges`. Mutates in place. @returns `true` if changed. */
+  add(ranges: FlatRanges, circular: FlatRanges): boolean;
+
+  /** Removes circular pairs from `ranges`. Any order is fine. Mutates in place. @returns `true` if changed. */
+  remove(ranges: FlatRanges, circular: FlatRanges): boolean;
+
+  /** Everything on the circle NOT covered. @returns a NEW array. */
+  invert(ranges: FlatRanges): FlatRanges;
+
+  /** Ranges covered by both `a` and `b` (both canonical). @returns a NEW array. */
+  intersect(a: FlatRanges, b: FlatRanges): FlatRanges;
+
+  /** Parts of the circular pairs that do NOT overlap `baseRanges`. @returns a NEW array. */
+  subtract_clip(baseRanges: FlatRanges, circular: FlatRanges): FlatRanges;
+
+  /** Total covered length. */
+  length(ranges: FlatRanges): number;
+
+  /** Whether `value` (taken modulo size) is covered. */
+  contains(ranges: FlatRanges, value: number): boolean;
+
+  /** Whether the circular interval [from, to) overlaps any range. */
+  overlaps(ranges: FlatRanges, from: number, to: number): boolean;
+
+  /** Element-wise equality of two canonical arrays. */
+  equal(a: FlatRanges, b: FlatRanges): boolean;
+
+  /**
+   * Positions in neither `have` nor `notHave`, over the whole circle or
+   * the circular window [from, to). @returns a NEW canonical array.
+   */
+  unknown(have: FlatRanges, notHave: FlatRanges, from?: number | null, to?: number | null): FlatRanges;
+
+  /**
+   * The first unknown gap scanning forward from `from` (default 0) through
+   * the window (default the whole circle), clipped to `maxLen`. A gap that
+   * crosses 0 comes back whole as [from, to] with `to < from`; a gap
+   * filling a whole-circle window is [x, x + size].
+   */
+  first_unknown(
+    have: FlatRanges,
+    notHave: FlatRanges,
+    from?: number | null,
+    to?: number | null,
+    maxLen?: number | null
+  ): [number, number] | null;
+
+  /** As the core `add_have`, with circular input. */
+  add_have(have: FlatRanges, notHave: FlatRanges, newHave: FlatRanges): boolean;
+  /** As the core `add_not_have`, with circular input. */
+  add_not_have(have: FlatRanges, notHave: FlatRanges, newNotHave: FlatRanges): boolean;
+  /** As the core `set_have`, with circular input. */
+  set_have(have: FlatRanges, notHave: FlatRanges, newHave: FlatRanges): boolean;
+  /** As the core `set_not_have`, with circular input. */
+  set_not_have(have: FlatRanges, notHave: FlatRanges, newNotHave: FlatRanges): boolean;
+
+  /** `true` when one run crosses 0 (stored as [0, …] … [… , size)). */
+  wraps(ranges: FlatRanges): boolean;
+
+  /** Number of runs as seen on the circle (a run across 0 counts once). */
+  count(ranges: FlatRanges): number;
+
+  /** Circular view: the run across 0 comes last as [from, to] with `to < from`. @returns a NEW array. */
+  runs(ranges: FlatRanges): FlatRanges;
+
+  /** `x` folded into [0, size). */
+  mod(x: number): number;
+
+  /** Shortest distance between two positions, either way round. */
+  distance(a: number, b: number): number;
+
+  /**
+   * Circular mean of the covered positions, or `null` when it is undefined
+   * (nothing covered, or coverage spread evenly). Floating point: do not
+   * use where results must match bit-for-bit across machines.
+   */
+  center(ranges: FlatRanges): number | null;
+
+  /** 1 when coverage sits at one point, 0 when spread evenly round the circle. */
+  concentration(ranges: FlatRanges): number;
+}
+
+/**
+ * Creates the circular API for a circle of `size` positions.
+ * @throws RangeError if `size` is not a positive finite number.
+ */
+export function ring(size: number): Ring;
+
 declare const flatRanges: {
   add: typeof add;
   remove: typeof remove;
@@ -153,6 +260,7 @@ declare const flatRanges: {
   add_not_have: typeof add_not_have;
   set_have: typeof set_have;
   set_not_have: typeof set_not_have;
+  ring: typeof ring;
 };
 
 export default flatRanges;

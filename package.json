@@ -1,6 +1,6 @@
 {
   "name": "flat-ranges",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "description": "Track what you have, what's missing, and what's unknown - fast range management for sync, streaming, and downloads",
   "type": "commonjs",
   "keywords": [
@@ -22,6 +22,9 @@
     "download",
     "availability",
     "scheduling",
+    "circular",
+    "ring",
+    "wraparound",
     "bitfield",
     "typescript"
   ],
@@ -58,7 +61,7 @@
     "node": ">=10"
   },
   "scripts": {
-    "test": "node test.js"
+    "test": "node test.js && node test-ring.js"
   },
   "funding": [
     {
